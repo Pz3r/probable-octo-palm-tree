@@ -1,0 +1,35 @@
+# Agent lane: every PR from an agent/* branch gets an independent spec-compliance review.
+# Setup: install the Claude GitHub app on the repo (run `/install-github-app` inside Claude Code)
+# and add an ANTHROPIC_API_KEY repository secret. Check the claude-code-action README for the
+# current input names before relying on this.
+name: Claude spec review
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+jobs:
+  review:
+    if: startsWith(github.head_ref, 'agent/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          prompt: |
+            This PR's branch is ${{ github.head_ref }}. The spec slug is the part after "agent/".
+            Use the spec-reviewer subagent to review this PR against specs/<slug>/spec.md,
+            comparing against origin/main instead of main.
+            Post its report as a single PR comment. Do not push commits.
