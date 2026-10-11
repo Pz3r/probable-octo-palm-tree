@@ -11,7 +11,7 @@ const root = projectRoot(input.cwd);
 const p = rel(root, file);
 
 const PROTECTED = [
-  [/^\.env(\..*)?$/, 'Secrets files are off-limits to agents.'],
+  [/^\.env(?!\.example$)(\..*)?$/, 'Secrets files are off-limits to agents.'],
   [/(^|\/)package-lock\.json$/, 'Use npm install/uninstall instead of editing the lockfile.'],
   [/^\.github\/workflows\//, 'CI workflows are human-owned. Propose the change in your summary instead.'],
   [/^\.claude\/hooks\//, 'Agents may not modify their own guardrails.'],
