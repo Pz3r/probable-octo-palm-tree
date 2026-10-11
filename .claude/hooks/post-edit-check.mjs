@@ -20,6 +20,8 @@ const types = run('npx tsc --noEmit --pretty false', root);
 if (!types.ok) problems.push(`TypeScript:\n${tail(types.output)}`);
 
 if (problems.length) {
-  block(`Checks failed after editing ${p}. Fix these before moving on:\n\n${problems.join('\n\n')}`);
+  block(
+    `Checks failed after editing ${p}. Fix these before moving on:\n\n${problems.join('\n\n')}`,
+  );
 }
 process.exit(0);

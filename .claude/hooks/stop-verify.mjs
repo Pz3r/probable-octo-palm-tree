@@ -14,7 +14,9 @@ const root = projectRoot(input.cwd);
 const dirty = run('git status --porcelain -- src test', root);
 const branch = run('git branch --show-current', root).output.trim();
 const committed =
-  branch && branch !== 'main' ? run('git diff --quiet main...HEAD -- src test', root) : { ok: true };
+  branch && branch !== 'main'
+    ? run('git diff --quiet main...HEAD -- src test', root)
+    : { ok: true };
 const changed = (dirty.ok && dirty.output.trim() !== '') || !committed.ok;
 if (!changed) process.exit(0);
 

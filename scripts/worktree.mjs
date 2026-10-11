@@ -9,12 +9,21 @@
 //
 // Logs from `run` go to .worktrees/<slug>.log. Review each branch, then merge it yourself.
 import { execSync, spawn } from 'node:child_process';
-import { existsSync, mkdirSync, openSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  openSync,
+  readdirSync,
+  readFileSync,
+  unlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import path from 'node:path';
 
 const root = execSync('git rev-parse --show-toplevel', { encoding: 'utf8' }).trim();
 const wtDir = path.join(root, '.worktrees');
-const sh = (cmd, opts = {}) => execSync(cmd, { cwd: root, encoding: 'utf8', stdio: 'pipe', ...opts }).trim();
+const sh = (cmd, opts = {}) =>
+  execSync(cmd, { cwd: root, encoding: 'utf8', stdio: 'pipe', ...opts }).trim();
 
 function slugFrom(arg) {
   const slug = path.basename(arg.replace(/\/+$/, ''));
@@ -44,7 +53,9 @@ function cmdNew(args) {
   for (const a of args.filter((x) => !x.startsWith('--'))) {
     const slug = slugFrom(a);
     const dir = ensureWorktree(slug, { install });
-    console.log(`\nNext:\n  cd ${path.relative(process.cwd(), dir)}\n  claude "/plan specs/${slug}"   # then /implement specs/${slug}\n`);
+    console.log(
+      `\nNext:\n  cd ${path.relative(process.cwd(), dir)}\n  claude "/plan specs/${slug}"   # then /implement specs/${slug}\n`,
+    );
   }
 }
 
@@ -52,7 +63,9 @@ function cmdRun(args) {
   const extra = process.env.CLAUDE_ARGS ? process.env.CLAUDE_ARGS.split(' ') : [];
   for (const a of args) {
     const slug = slugFrom(a);
-    const status = readFileSync(path.join(root, 'specs', slug, 'spec.md'), 'utf8').match(/^status:\s*(\w+)/m)?.[1];
+    const status = readFileSync(path.join(root, 'specs', slug, 'spec.md'), 'utf8').match(
+      /^status:\s*(\w+)/m,
+    )?.[1];
     if (status !== 'approved') {
       console.error(`✗ ${slug}: spec status is "${status}", not "approved" — skipping`);
       continue;
@@ -64,12 +77,19 @@ function cmdRun(args) {
     const child = spawn(
       'claude',
       ['-p', `/implement specs/${slug}`, '--permission-mode', 'acceptEdits', ...extra],
-      { cwd: dir, detached: true, stdio: ['ignore', out, out], shell: process.platform === 'win32' },
+      {
+        cwd: dir,
+        detached: true,
+        stdio: ['ignore', out, out],
+        shell: process.platform === 'win32',
+      },
     );
     child.on('error', (e) => console.error(`✗ ${slug}: could not start claude (${e.message})`));
     writeFileSync(path.join(wtDir, `${slug}.pid`), String(child.pid));
     child.unref();
-    console.log(`▶ ${slug}: agent started (pid ${child.pid}), log: ${path.relative(process.cwd(), log)}`);
+    console.log(
+      `▶ ${slug}: agent started (pid ${child.pid}), log: ${path.relative(process.cwd(), log)}`,
+    );
   }
   console.log('\nCheck progress with: node scripts/worktree.mjs status');
 }
@@ -85,7 +105,9 @@ function isRunning(pid) {
 
 function cmdStatus() {
   if (!existsSync(wtDir)) return console.log('No agent worktrees.');
-  const slugs = readdirSync(wtDir, { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name);
+  const slugs = readdirSync(wtDir, { withFileTypes: true })
+    .filter((d) => d.isDirectory())
+    .map((d) => d.name);
   if (!slugs.length) return console.log('No agent worktrees.');
   for (const slug of slugs) {
     const dir = path.join(wtDir, slug);
@@ -116,7 +138,9 @@ const [cmd, ...args] = process.argv.slice(2);
 const commands = { new: cmdNew, run: cmdRun, status: cmdStatus, list: cmdStatus, rm: cmdRm };
 try {
   if (!commands[cmd]) {
-    console.log('Usage: node scripts/worktree.mjs <new|run|status|rm> <spec-slug…> [--no-install] [--delete-branch]');
+    console.log(
+      'Usage: node scripts/worktree.mjs <new|run|status|rm> <spec-slug…> [--no-install] [--delete-branch]',
+    );
     process.exit(cmd ? 1 : 0);
   }
   commands[cmd](args);
