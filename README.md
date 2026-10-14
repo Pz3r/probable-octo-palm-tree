@@ -93,8 +93,9 @@ Spec 003 (search + pagination) is a `draft` with open questions, and one of them
 Then try `/spec` on your own idea, e.g. *"swap the in-memory repository for Postgres via Supabase"*.
 
 ### 6. Agent lane in CI (optional)
-Push to GitHub, run `/install-github-app` in Claude Code, add an `ANTHROPIC_API_KEY` secret, and
-open a PR from an `agent/*` branch. `claude-review.yml` posts a spec-compliance review.
+Push to GitHub, add a `DEEPSEEK_API_KEY` repository secret (optionally a `DEEPSEEK_MODEL` variable),
+and open a PR from an `agent/*` branch. `claude-review.yml` runs the Claude Code CLI against DeepSeek's
+Anthropic-compatible API and posts the `spec-reviewer` report as a PR comment.
 
 ## Cleaning up
 ```bash

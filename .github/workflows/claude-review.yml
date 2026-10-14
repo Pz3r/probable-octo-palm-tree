@@ -1,35 +1,88 @@
 # Agent lane: every PR from an agent/* branch gets an independent spec-compliance review.
-# Setup: install the Claude GitHub app on the repo (run `/install-github-app` inside Claude Code)
-# and add an ANTHROPIC_API_KEY repository secret. Check the claude-code-action README for the
-# current input names before relying on this.
-name: Claude spec review
+#
+# Harness: Claude Code CLI (so the spec-reviewer subagent, CLAUDE.md, skills and hooks all apply).
+# Model:   DeepSeek, through its Anthropic-compatible API (https://api-docs.deepseek.com/guides/anthropic_api).
+#
+# Setup (once):
+#   - Repository secret  DEEPSEEK_API_KEY  (Settings → Secrets and variables → Actions)
+#   - Optional variable  DEEPSEEK_MODEL     to override the model (default below)
+name: AI spec review (DeepSeek)
 
 on:
   pull_request:
     types: [opened, synchronize]
 
+concurrency:
+  group: ai-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
 jobs:
   review:
     if: startsWith(github.head_ref, 'agent/')
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     permissions:
       contents: read
       pull-requests: write
-      id-token: write
+    env:
+      # Route Claude Code to DeepSeek instead of Anthropic.
+      ANTHROPIC_BASE_URL: https://api.deepseek.com/anthropic
+      ANTHROPIC_AUTH_TOKEN: ${{ secrets.DEEPSEEK_API_KEY }}
+      ANTHROPIC_MODEL: ${{ vars.DEEPSEEK_MODEL || 'deepseek-v4-pro' }}
+      ANTHROPIC_DEFAULT_OPUS_MODEL: ${{ vars.DEEPSEEK_MODEL || 'deepseek-v4-pro' }}
+      ANTHROPIC_DEFAULT_SONNET_MODEL: ${{ vars.DEEPSEEK_MODEL || 'deepseek-v4-pro' }}
+      ANTHROPIC_DEFAULT_HAIKU_MODEL: deepseek-flash
+      # The review itself runs in the spec-reviewer subagent, so give it the strong model too.
+      CLAUDE_CODE_SUBAGENT_MODEL: ${{ vars.DEEPSEEK_MODEL || 'deepseek-v4-pro' }}
+      CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1'
+      # The reviewer doesn't edit code; skip the end-of-turn `npm run check` gate.
+      SKIP_STOP_VERIFY: '1'
+      # Untrusted PR data goes through env vars, never inline ${{ }} in shell scripts.
+      HEAD_REF: ${{ github.head_ref }}
+      BASE_REF: ${{ github.base_ref }}
+      PR_NUMBER: ${{ github.event.pull_request.number }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
+
       - run: npm ci
-      - uses: anthropics/claude-code-action@v1
+
+      - name: Install Claude Code CLI
+        run: npm install -g @anthropic-ai/claude-code
+
+      - name: Run spec review
+        run: |
+          if [ -z "$ANTHROPIC_AUTH_TOKEN" ]; then
+            echo "::warning::DEEPSEEK_API_KEY secret is not set; skipping AI review."
+            exit 0
+          fi
+          SLUG="${HEAD_REF#agent/}"
+          git fetch --quiet origin "$BASE_REF"
+          claude -p "Use the spec-reviewer subagent to review this branch against specs/$SLUG/spec.md, using origin/$BASE_REF as the base instead of main. Output only its report, in Markdown." \
+            --allowedTools "Read,Grep,Glob,Task,Agent,Bash(git diff:*),Bash(git log:*),Bash(git merge-base:*),Bash(npm run check:*)" \
+            > review.md
+          test -s review.md || { echo "::error::Reviewer produced no output"; exit 1; }
+
+      - name: Post review as PR comment
+        if: hashFiles('review.md') != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          {
+            echo "### 🤖 AI spec review (DeepSeek \`$ANTHROPIC_MODEL\` via Claude Code)"
+            echo
+            cat review.md
+          } > comment.md
+          gh pr comment "$PR_NUMBER" --body-file comment.md
+
+      - uses: actions/upload-artifact@v4
+        if: always() && hashFiles('review.md') != ''
         with:
-          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-          prompt: |
-            This PR's branch is ${{ github.head_ref }}. The spec slug is the part after "agent/".
-            Use the spec-reviewer subagent to review this PR against specs/<slug>/spec.md,
-            comparing against origin/main instead of main.
-            Post its report as a single PR comment. Do not push commits.
+          name: ai-review
+          path: review.md
