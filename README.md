@@ -77,9 +77,24 @@ One-time setup: create a GitHub repo, `git remote add origin …`, `git push -u 
 `gh auth login`, and add the `DEEPSEEK_API_KEY` secret for the AI review (exercise 6).
 ```bash
 node scripts/worktree.mjs run 001-task-priority 002-health-endpoint
-node scripts/worktree.mjs status       # come back later: agent state + PR link
-tail -f .worktrees/002-health-endpoint.log
+node scripts/worktree.mjs status                      # progress of every agent
+node scripts/worktree.mjs logs 002-health-endpoint    # live activity, follows until the agent exits
 ```
+`status` shows, per agent: running/finished, elapsed and idle time, tool calls and errors, ticked
+tasks from `tasks.md`, the last commit, what it's doing right now, cost when finished, and the PR
+link. Agents idle for more than 15 minutes are flagged (`AGENT_STALE_MIN` to change it). `logs`
+reads like this:
+```
+10:42:03  Read    src/tasks/tasks.service.ts
+10:42:09  Agent   test-writer: Write failing tests for AC1–AC7
+10:42:15    ↳ Write   src/tasks/tasks.service.spec.ts
+10:43:30  Bash    npx jest tasks
+10:43:31  ✗ 5 failed, 7 passed
+10:58:40  ■ Finished: success · 41 turns · 16m 37s · $1.12
+```
+Raw events are in `.worktrees/<slug>.events.jsonl` (`logs <slug> --raw`). On macOS you get a desktop
+notification when an agent finishes (`AGENT_NOTIFY=0` to turn it off). Add
+`watch -n 15 node scripts/worktree.mjs status` (`brew install watch`) for a self-refreshing view.
 `run` skips specs that aren't approved. When an agent finishes successfully, the script (not the
 agent) re-runs `npm run check`, pushes `agent/<slug>` and opens a **draft PR** using the agent's
 `specs/<slug>/pr.md` as the description. If the branch touches tooling files (package.json, configs,
