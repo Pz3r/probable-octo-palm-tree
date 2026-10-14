@@ -27,7 +27,10 @@ export class TasksService {
   }
 
   update(id: string, dto: UpdateTaskDto): Task {
-    const changes = { ...dto, ...(dto.title !== undefined && { title: dto.title.trim() }) };
+    const changes: Partial<Pick<Task, 'title' | 'done' | 'priority'>> = {};
+    if (dto.title !== undefined) changes.title = dto.title.trim();
+    if (dto.done !== undefined) changes.done = dto.done;
+    if (dto.priority !== undefined) changes.priority = dto.priority;
     const task = this.repo.update(id, changes);
     if (!task) throw new NotFoundException(`Task ${id} not found`);
     return task;
