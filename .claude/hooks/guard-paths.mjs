@@ -18,6 +18,8 @@ const PROTECTED = [
     'CI workflows are human-owned. Propose the change in your summary instead.',
   ],
   [/^\.claude\/hooks\//, 'Agents may not modify their own guardrails.'],
+  [/^\.claude\/settings\.json$/, 'Agents may not change their own permissions.'],
+  [/^scripts\/worktree\.mjs$/, 'The PR/orchestration script is human-owned.'],
   [/^\.\.\//, 'Writes outside the project are not allowed.'],
 ];
 

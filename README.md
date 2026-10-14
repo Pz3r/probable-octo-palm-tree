@@ -23,7 +23,7 @@ npm run dev     # http://localhost:3000/tasks
 | Subagents | `.claude/agents/test-writer.md`, `spec-reviewer.md` | Separate writer/reviewer roles. The reviewer never sees the implementation chat. |
 | Hooks | `.claude/hooks/*.mjs`, wired in `.claude/settings.json` | Deterministic guardrails (see below). |
 | Permissions | `.claude/settings.json` | Allow-list for safe commands, deny-list for destructive ones. |
-| Parallel agents | `scripts/worktree.mjs` | One worktree + branch per spec; optional headless runs. |
+| Parallel agents | `scripts/worktree.mjs` | One worktree + branch per spec; headless runs that end in a **draft PR**. Agents never push; the script does, after re-checking. |
 | CI | `.github/workflows/ci.yml`, `claude-review.yml` | Same `npm run check` gate for humans and agents, plus an AI review lane for `agent/*` PRs. |
 
 ### Hooks
@@ -72,13 +72,22 @@ node scripts/worktree.mjs status
 ```
 Then merge both branches into main yourself and run `npm run check`.
 
-### 4. Headless fan-out (overnight style)
+### 4. Headless fan-out ending in draft PRs (overnight style)
+One-time setup: create a GitHub repo, `git remote add origin …`, `git push -u origin main`,
+`gh auth login`, and add the `DEEPSEEK_API_KEY` secret for the AI review (exercise 6).
 ```bash
 node scripts/worktree.mjs run 001-task-priority 002-health-endpoint
-node scripts/worktree.mjs status       # come back later
+node scripts/worktree.mjs status       # come back later: agent state + PR link
 tail -f .worktrees/002-health-endpoint.log
 ```
-`run` skips specs that aren't approved. Pass extra Claude flags with `CLAUDE_ARGS`, e.g.
+`run` skips specs that aren't approved. When an agent finishes successfully, the script (not the
+agent) re-runs `npm run check`, pushes `agent/<slug>` and opens a **draft PR** using the agent's
+`specs/<slug>/pr.md` as the description. If the branch touches tooling files (package.json, configs,
+`scripts/`, `.claude/`, `.github/`), the PR says so. Failed or dirty runs get no PR.
+
+- Keep the branch local: `run <slug> --no-pr`
+- Open or update the PR by hand (e.g. after an interactive session): `node scripts/worktree.mjs pr <slug>`
+  (`--ready` for a non-draft PR) Pass extra Claude flags with `CLAUDE_ARGS`, e.g.
 `CLAUDE_ARGS="--model sonnet" node scripts/worktree.mjs run 002-health-endpoint` to try cheaper
 models on simple specs.
 
@@ -101,6 +110,7 @@ Anthropic-compatible API and posts the `spec-reviewer` report as a PR comment.
 ```bash
 node scripts/worktree.mjs rm 001-task-priority --delete-branch
 ```
+`--delete-branch` removes the local branch only. Delete the remote `agent/*` branch from the PR page after merging.
 
 ## Things to experiment with
 - Make CLAUDE.md longer or shorter and see whether results change.
