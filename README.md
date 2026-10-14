@@ -101,6 +101,16 @@ agent) re-runs `npm run check`, pushes `agent/<slug>` and opens a **draft PR** u
 `scripts/`, `.claude/`, `.github/`), the PR says so. Failed or dirty runs get no PR.
 
 - Keep the branch local: `run <slug> --no-pr`
+- Review the plan before any code is written:
+  ```bash
+  node scripts/worktree.mjs run 001-task-priority --plan-only   # agent writes + commits plan.md/tasks.md, stops
+  node scripts/worktree.mjs status                              # 📝 plan awaiting review
+  $EDITOR .worktrees/001-task-priority/specs/001-task-priority/plan.md   # read it, edit it if you like
+  node scripts/worktree.mjs approve-plan 001-task-priority      # commits your edits + status: approved
+  node scripts/worktree.mjs run 001-task-priority               # implements against the approved plan → draft PR
+  ```
+  `run` refuses while a plan is still `draft`, and agents can't approve plans or edit approved ones.
+  Without `--plan-only`, the agent plans and implements in one go (the approved spec is the gate).
 - Open or update the PR by hand (e.g. after an interactive session): `node scripts/worktree.mjs pr <slug>`
   (`--ready` for a non-draft PR) Pass extra Claude flags with `CLAUDE_ARGS`, e.g.
 `CLAUDE_ARGS="--model sonnet" node scripts/worktree.mjs run 002-health-endpoint` to try cheaper

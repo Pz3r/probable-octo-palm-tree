@@ -8,7 +8,13 @@ Plan the implementation of $ARGUMENTS.
 1. Read `$ARGUMENTS/spec.md`. If its status is not `approved`, stop and tell me.
    If it has unresolved open questions, stop and list them.
 2. Explore the code it touches. Use the `nestjs-conventions` skill.
-3. Write `$ARGUMENTS/plan.md`:
+3. Write `$ARGUMENTS/plan.md`, starting with this front matter (only a human changes it to `approved`):
+   ```
+   ---
+   status: draft
+   ---
+   ```
+   Then:
    - Approach (a few paragraphs), and alternatives you rejected with one line each
    - Files to create / modify
    - Data and API shape changes
@@ -17,4 +23,7 @@ Plan the implementation of $ARGUMENTS.
    The first task is always "Write failing tests for all acceptance criteria (test-writer)".
    The last is always "Independent review (spec-reviewer)".
 
-Do NOT write code. Summarise the plan in under 10 lines and wait for my go-ahead.
+5. Commit only those two files: `docs(<slug>): plan`.
+
+Do NOT write code. Summarise the plan in under 10 lines and wait for my go-ahead. The human approves it
+with `node scripts/worktree.mjs approve-plan <slug>` (or by setting `status: approved` themselves).

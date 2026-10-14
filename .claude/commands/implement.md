@@ -9,9 +9,13 @@ Preconditions — stop and tell me if any fail:
 - `$ARGUMENTS/spec.md` has `status: approved`
 - You're not on `main` (otherwise create and switch to branch `agent/<slug>`)
 
-Setup (don't stop for approval here; the approved spec is the human gate):
+Setup:
+- If `$ARGUMENTS/plan.md` has `status: draft`, stop: the human asked to review the plan first and
+  hasn't approved it yet. Say so and end.
 - If `$ARGUMENTS/plan.md` or `$ARGUMENTS/tasks.md` is missing, write them following steps 2–4 of
-  `.claude/commands/plan.md`, but skip its "wait for my go-ahead". Then continue.
+  `.claude/commands/plan.md`, but with `status: auto` in plan.md's front matter (generated without a
+  separate plan review; the approved spec is the gate) and skip its "wait for my go-ahead". Then continue.
+- Never edit `plan.md` once it's `approved`; record progress by ticking boxes in `tasks.md`.
 - If plan.md, tasks.md or other files under `$ARGUMENTS/` are uncommitted (yours or from an earlier
   run), commit them now: `docs(<slug>): plan`.
 

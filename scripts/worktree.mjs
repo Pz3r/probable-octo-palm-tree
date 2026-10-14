@@ -4,6 +4,8 @@
 //   node scripts/worktree.mjs new 002-health-endpoint        # .worktrees/002-health-endpoint on agent/002-health-endpoint
 //   node scripts/worktree.mjs run 001-task-priority 002-...  # headless agents in parallel; each opens a draft PR when done
 //   node scripts/worktree.mjs run 002-health-endpoint --no-pr  # headless, but leave the branch local
+//   node scripts/worktree.mjs run 002-health-endpoint --plan-only  # agent writes + commits plan.md/tasks.md, then stops
+//   node scripts/worktree.mjs approve-plan 002-health-endpoint # you approve the (possibly edited) plan; then `run` it
 //   node scripts/worktree.mjs pr 002-health-endpoint [--ready] # validate, push, open (or update) the PR yourself
 //   node scripts/worktree.mjs status                         # progress: tasks, tool calls, idle time, last commit, PR
 //   node scripts/worktree.mjs logs 002-health-endpoint        # live activity log (follows while the agent runs)
@@ -48,6 +50,12 @@ const trySh = (cmd, opts = {}) => {
     return null;
   }
 };
+/** Paths with uncommitted changes in a worktree. (Not via sh(): trimming would eat the status column.) */
+const changedFiles = (dir) =>
+  execFileSync('git', ['status', '--porcelain'], { cwd: dir, encoding: 'utf8' })
+    .split('\n')
+    .filter(Boolean)
+    .map((l) => l.slice(3));
 const resultFile = (slug) => path.join(wtDir, `${slug}.result`);
 const setResult = (slug, text) => writeFileSync(resultFile(slug), text);
 const stateFile = (slug) => path.join(wtDir, `${slug}.state.json`);
@@ -61,6 +69,11 @@ const readJson = (f) => {
 };
 const hhmmss = () => new Date().toTimeString().slice(0, 8);
 const STALE_MIN = Number(process.env.AGENT_STALE_MIN ?? 15);
+const UNATTENDED_PLAN_NOTE =
+  'You are running unattended in a background job: nobody can answer questions. Only plan: write ' +
+  'specs/<slug>/plan.md (front matter status: draft) and specs/<slug>/tasks.md as /plan describes, ' +
+  'commit exactly those two files, then stop. Do not write or change any other file. Put anything ' +
+  'you would have asked the human under a "Questions for the reviewer" section in plan.md.';
 // Headless runs have nobody to answer questions or approve a plan; say so explicitly.
 const UNATTENDED_NOTE =
   'You are running unattended in a background job: nobody can answer questions or give a go-ahead. ' +
@@ -80,6 +93,13 @@ function specField(slug, field, dir = root) {
   const file = path.join(dir, 'specs', slug, 'spec.md');
   const src = existsSync(file) ? file : path.join(root, 'specs', slug, 'spec.md');
   return readFileSync(src, 'utf8').match(new RegExp(`^${field}:\\s*(.+?)\\s*(#.*)?$`, 'm'))?.[1];
+}
+
+/** Front-matter status of the plan in a worktree: 'draft' | 'approved' | 'auto' | null (no plan). */
+function planStatus(dir, slug) {
+  const f = path.join(dir, 'specs', slug, 'plan.md');
+  if (!existsSync(f)) return null;
+  return readFileSync(f, 'utf8').match(/^status:\s*(\w+)/m)?.[1] ?? 'unknown';
 }
 
 function ensureWorktree(slug, { install = true } = {}) {
@@ -111,11 +131,27 @@ function cmdNew(args) {
 
 function cmdRun(args) {
   const noPr = args.includes('--no-pr');
+  const planOnly = args.includes('--plan-only');
   for (const a of args.filter((x) => !x.startsWith('--'))) {
     const slug = slugFrom(a);
     const status = specField(slug, 'status');
     if (status !== 'approved') {
       console.error(`✗ ${slug}: spec status is "${status}", not "approved", skipping`);
+      continue;
+    }
+    const existing = path.join(wtDir, slug);
+    const plan = existsSync(existing) ? planStatus(existing, slug) : null;
+    if (!planOnly && plan === 'draft') {
+      console.error(
+        `✗ ${slug}: plan awaits your review (.worktrees/${slug}/specs/${slug}/plan.md). ` +
+          `Approve it with: node scripts/worktree.mjs approve-plan ${slug}`,
+      );
+      continue;
+    }
+    if (planOnly && plan && plan !== 'draft') {
+      console.error(
+        `✗ ${slug}: plan is already "${plan}"; run without --plan-only to implement it`,
+      );
       continue;
     }
     ensureWorktree(slug);
@@ -124,15 +160,19 @@ function cmdRun(args) {
     const out = openSync(log, 'w');
     // The background job is this script (from the main checkout, not the agent's worktree, so the
     // agent can't edit what runs after it): run the agent, then open the PR if it succeeded.
-    const child = spawn(process.execPath, [SELF, '_agent', slug, ...(noPr ? ['--no-pr'] : [])], {
-      cwd: root,
-      detached: true,
-      stdio: ['ignore', out, out],
-    });
+    const child = spawn(
+      process.execPath,
+      [SELF, '_agent', slug, ...(noPr ? ['--no-pr'] : []), ...(planOnly ? ['--plan-only'] : [])],
+      {
+        cwd: root,
+        detached: true,
+        stdio: ['ignore', out, out],
+      },
+    );
     writeFileSync(path.join(wtDir, `${slug}.pid`), String(child.pid));
     child.unref();
     console.log(
-      `▶ ${slug}: agent started (pid ${child.pid})${noPr ? '' : ', draft PR when it succeeds'}; ` +
+      `▶ ${slug}: agent started (pid ${child.pid})${planOnly ? ', plan only' : noPr ? '' : ', draft PR when it succeeds'}; ` +
         `log: ${path.relative(process.cwd(), log)}`,
     );
   }
@@ -166,13 +206,15 @@ function notify(title, message) {
  */
 async function cmdAgent([slug, ...rest]) {
   const dir = path.join(wtDir, slug);
+  const planOnly = rest.includes('--plan-only');
   const extra = process.env.CLAUDE_ARGS ? process.env.CLAUDE_ARGS.split(' ') : [];
   const log = (line) => console.log(`${hhmmss()}  ${line}`);
   const state = { startedAt: Date.now(), lastEventAt: Date.now(), toolCalls: 0, errors: 0 };
   const save = () => writeFileSync(stateFile(slug), JSON.stringify(state));
   save();
   setResult(slug, 'running');
-  log(`Agent starting: /implement specs/${slug}`);
+  const command = `${planOnly ? '/plan' : '/implement'} specs/${slug}`;
+  log(`Agent starting: ${command}`);
 
   const events = createWriteStream(path.join(wtDir, `${slug}.events.jsonl`));
   // acceptEdits: file edits are auto-approved; Bash is limited to the allow-list in .claude/settings.json.
@@ -180,14 +222,14 @@ async function cmdAgent([slug, ...rest]) {
     'claude',
     [
       '-p',
-      `/implement specs/${slug}`,
+      command,
       '--permission-mode',
       'acceptEdits',
       '--output-format',
       'stream-json',
       '--verbose',
       '--append-system-prompt',
-      UNATTENDED_NOTE,
+      planOnly ? UNATTENDED_PLAN_NOTE : UNATTENDED_NOTE,
       ...extra,
     ],
     { cwd: dir, stdio: ['ignore', 'pipe', 'inherit'], shell: process.platform === 'win32' },
@@ -221,15 +263,9 @@ async function cmdAgent([slug, ...rest]) {
 
   // An agent can exit 0 without finishing (e.g. it stopped to ask something). Check before the PR.
   const unfinished = [];
-  if (code === 0) {
-    const dirty = sh('git status --porcelain', { cwd: dir });
-    if (dirty)
-      unfinished.push(
-        `uncommitted: ${dirty
-          .split('\n')
-          .map((l) => l.slice(3))
-          .join(', ')}`,
-      );
+  if (code === 0 && !planOnly) {
+    const dirty = changedFiles(dir);
+    if (dirty.length) unfinished.push(`uncommitted: ${dirty.join(', ')}`);
     const tasks = taskProgress(dir, slug);
     const m = tasks?.match(/(\d+)\/(\d+)/);
     if (m && m[1] !== m[2]) unfinished.push(tasks);
@@ -239,6 +275,16 @@ async function cmdAgent([slug, ...rest]) {
   let outcome;
   if (code !== 0) {
     outcome = `agent failed (exit ${code}), no PR`;
+  } else if (planOnly) {
+    const ps = planStatus(dir, slug);
+    const dirty = changedFiles(dir).length > 0;
+    const tasks = taskProgress(dir, slug);
+    outcome =
+      ps === 'draft' && tasks && !dirty
+        ? `📝 plan ready for review (${tasks}): .worktrees/${slug}/specs/${slug}/plan.md, then ` +
+          `approve-plan ${slug} && run ${slug}`
+        : `plan run stopped before finishing (plan: ${ps ?? 'missing'}, ${tasks ?? 'no tasks.md'}` +
+          `${dirty ? ', uncommitted changes' : ''}). Check the log, then re-run with --plan-only`;
   } else if (unfinished.length) {
     outcome = `agent stopped before finishing (${unfinished.join('; ')}), no PR. Check the log, then re-run`;
   } else if (rest.includes('--no-pr')) {
@@ -348,6 +394,51 @@ function openPr(slug, { ready = false } = {}) {
   return url;
 }
 
+/** Human approval of an agent's plan: commits your edits (if any) and sets status: approved. */
+function cmdApprovePlan(args) {
+  for (const a of args.filter((x) => !x.startsWith('--'))) {
+    const slug = slugFrom(a);
+    const dir = path.join(wtDir, slug);
+    if (!existsSync(dir)) throw new Error(`No worktree at .worktrees/${slug}`);
+    const planRel = `specs/${slug}/plan.md`;
+    const tasksRel = `specs/${slug}/tasks.md`;
+    const ps = planStatus(dir, slug);
+    if (ps === null)
+      throw new Error(
+        `${slug}: no plan yet. Run: node scripts/worktree.mjs run ${slug} --plan-only`,
+      );
+    if (ps === 'approved') {
+      console.log(`✓ ${slug}: plan already approved. Next: node scripts/worktree.mjs run ${slug}`);
+      continue;
+    }
+    const dirty = changedFiles(dir);
+    const other = dirty.filter((f) => f !== planRel && f !== tasksRel);
+    if (other.length) {
+      throw new Error(
+        `${slug}: unexpected uncommitted changes besides the plan: ${other.join(', ')}`,
+      );
+    }
+    const file = path.join(dir, planRel);
+    const src = readFileSync(file, 'utf8');
+    writeFileSync(
+      file,
+      /^status:\s*\w+/m.test(src)
+        ? src.replace(/^status:\s*\w+/m, 'status: approved')
+        : `---\nstatus: approved\n---\n\n${src}`,
+    );
+    execFileSync(
+      'git',
+      ['add', planRel, ...(existsSync(path.join(dir, tasksRel)) ? [tasksRel] : [])],
+      { cwd: dir },
+    );
+    const edited = dirty.length ? ' (with your edits)' : '';
+    execFileSync('git', ['commit', '-q', '-m', `docs(${slug}): approve plan${edited}`], {
+      cwd: dir,
+    });
+    console.log(`✓ ${slug}: plan approved${edited}. Next: node scripts/worktree.mjs run ${slug}`);
+  }
+}
+
 function cmdPr(args) {
   const ready = args.includes('--ready');
   let failed = false;
@@ -409,7 +500,7 @@ function cmdStatus() {
       head.push(`⚠ stopped unexpectedly after ${fmtDuration(st.lastEventAt - st.startedAt)}`);
     } else if (pid) {
       const ok = st?.exitCode === 0;
-      const early = result.startsWith('agent stopped before finishing');
+      const early = /stopped before finishing/.test(result);
       head.push(early ? '⚠ stopped early' : `${ok ? '✓' : '✗'} finished`);
       if (st?.finishedAt) head.push(fmtDuration(st.finishedAt - st.startedAt));
       if (typeof st?.result?.costUsd === 'number') head.push(`$${st.result.costUsd.toFixed(2)}`);
@@ -430,9 +521,16 @@ function cmdStatus() {
         `    ⚠ no activity for ${fmtDuration(now - st.lastEventAt)}; check: node scripts/worktree.mjs logs ${slug}`,
       );
     }
-    if (!running && result === 'running') {
+    if (!running && /stopped before finishing/.test(result)) console.log(`    ${result}`);
+    if (!running && planStatus(dir, slug) === 'draft') {
+      console.log(
+        `    📝 plan awaiting review: .worktrees/${slug}/specs/${slug}/plan.md → approve-plan ${slug}`,
+      );
+    } else if (!running && result === 'running') {
       console.log(`    no result recorded; inspect the log, then re-run or open the PR by hand`);
-    } else if (!running && result) console.log(`    ${result}`);
+    } else if (!running && result && !/stopped before finishing/.test(result)) {
+      console.log(`    ${result}`);
+    }
   }
 }
 
@@ -489,6 +587,7 @@ const commands = {
   new: cmdNew,
   run: cmdRun,
   pr: cmdPr,
+  'approve-plan': cmdApprovePlan,
   status: cmdStatus,
   list: cmdStatus,
   logs: cmdLogs,
@@ -498,8 +597,8 @@ const commands = {
 try {
   if (!commands[cmd]) {
     console.log(
-      'Usage: node scripts/worktree.mjs <new|run|pr|status|logs|rm> <spec-slug…> ' +
-        '[--no-install] [--no-pr] [--ready] [--delete-branch]',
+      'Usage: node scripts/worktree.mjs <new|run|approve-plan|pr|status|logs|rm> <spec-slug…> ' +
+        '[--no-install] [--no-pr] [--plan-only] [--ready] [--delete-branch]',
     );
     process.exit(cmd ? 1 : 0);
   }
