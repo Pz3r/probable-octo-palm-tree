@@ -20,5 +20,5 @@ spec: 001-task-priority
       Verify: `npm test -- tasks.e2e` passes (AC5, AC6, AC7).
 - [x] Run `npm run check` and fix any typecheck/lint/test failures.
       Verify: `npm run check` is green.
-- [ ] Independent review (spec-reviewer).
+- [x] Independent review (spec-reviewer).
       Verify: blockers and major findings resolved, `npm run check` still green.
