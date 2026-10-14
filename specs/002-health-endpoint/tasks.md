@@ -12,7 +12,7 @@
       Verified: covered by e2e test once wired up.
 - [x] Create `src/health/health.module.ts` and register it in `src/app.module.ts`
       Verified: `npm test -- health` passes end-to-end (AC1, AC2, AC3, AC4).
-- [ ] Run `npm run check` and fix anything red
+- [x] Run `npm run check` and fix anything red
       Verified: `npm run check` exits 0.
 - [ ] Independent review (spec-reviewer)
       Verified: reviewer run completes; blockers/majors addressed.
