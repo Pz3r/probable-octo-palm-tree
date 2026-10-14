@@ -14,5 +14,5 @@
       Verified: `npm test -- health` passes end-to-end (AC1, AC2, AC3, AC4).
 - [x] Run `npm run check` and fix anything red
       Verified: `npm run check` exits 0.
-- [ ] Independent review (spec-reviewer)
+- [x] Independent review (spec-reviewer)
       Verified: reviewer run completes; blockers/majors addressed.
