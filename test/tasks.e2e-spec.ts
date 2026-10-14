@@ -114,6 +114,7 @@ describe('Tasks API (e2e)', () => {
       .expect(201);
     const id: string = created.body.id;
 
+    await new Promise((resolve) => setTimeout(resolve, 5));
     const updated = await request(server)
       .patch(`/tasks/${id}`)
       .send({ priority: 'low' })
