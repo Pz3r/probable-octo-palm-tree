@@ -1,6 +1,6 @@
 # Tasks: Health endpoint
 
-- [ ] Write failing tests for all acceptance criteria (test-writer)
+- [x] Write failing tests for all acceptance criteria (test-writer)
       Verified: `npm test -- health` fails (module/files don't exist yet).
 - [ ] Enable `resolveJsonModule` in `tsconfig.json`
       Verified: `npm run typecheck` still passes (no behaviour change yet, flag is additive).
