@@ -8,9 +8,9 @@
       Verified: `npm run typecheck` passes.
 - [x] Create `src/health/health.service.ts` (captures start time, computes uptime, reads version from package.json)
       Verified: `npm test -- health.service` passes (AC2, AC3).
-- [ ] Create `src/health/health.controller.ts` with `GET /health`
+- [x] Create `src/health/health.controller.ts` with `GET /health`
       Verified: covered by e2e test once wired up.
-- [ ] Create `src/health/health.module.ts` and register it in `src/app.module.ts`
+- [x] Create `src/health/health.module.ts` and register it in `src/app.module.ts`
       Verified: `npm test -- health` passes end-to-end (AC1, AC2, AC3, AC4).
 - [ ] Run `npm run check` and fix anything red
       Verified: `npm run check` exits 0.
