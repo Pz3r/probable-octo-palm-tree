@@ -7,8 +7,13 @@ Implement $ARGUMENTS.
 
 Preconditions — stop and tell me if any fail:
 - `$ARGUMENTS/spec.md` has `status: approved`
-- `$ARGUMENTS/plan.md` and `$ARGUMENTS/tasks.md` exist (otherwise run the /plan steps first, then continue)
 - You're not on `main` (otherwise create and switch to branch `agent/<slug>`)
+
+Setup (don't stop for approval here; the approved spec is the human gate):
+- If `$ARGUMENTS/plan.md` or `$ARGUMENTS/tasks.md` is missing, write them following steps 2–4 of
+  `.claude/commands/plan.md`, but skip its "wait for my go-ahead". Then continue.
+- If plan.md, tasks.md or other files under `$ARGUMENTS/` are uncommitted (yours or from an earlier
+  run), commit them now: `docs(<slug>): plan`.
 
 Loop:
 1. Use the **test-writer** subagent to write failing tests for every acceptance criterion.

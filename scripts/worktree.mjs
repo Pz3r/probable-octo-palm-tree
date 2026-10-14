@@ -61,6 +61,12 @@ const readJson = (f) => {
 };
 const hhmmss = () => new Date().toTimeString().slice(0, 8);
 const STALE_MIN = Number(process.env.AGENT_STALE_MIN ?? 15);
+// Headless runs have nobody to answer questions or approve a plan; say so explicitly.
+const UNATTENDED_NOTE =
+  'You are running unattended in a background job: nobody can answer questions or give a go-ahead. ' +
+  'Never stop to wait for approval. Work through the whole /implement loop and finish with every ' +
+  'change committed and specs/<slug>/pr.md written. If you genuinely cannot continue (spec impossible ' +
+  'or contradictory, missing access), commit what you have, explain why in your final message, and stop.';
 
 function slugFrom(arg) {
   const slug = path.basename(arg.replace(/\/+$/, ''));
@@ -180,6 +186,8 @@ async function cmdAgent([slug, ...rest]) {
       '--output-format',
       'stream-json',
       '--verbose',
+      '--append-system-prompt',
+      UNATTENDED_NOTE,
       ...extra,
     ],
     { cwd: dir, stdio: ['ignore', 'pipe', 'inherit'], shell: process.platform === 'win32' },
@@ -211,9 +219,28 @@ async function cmdAgent([slug, ...rest]) {
   save();
   log(`Agent exited with code ${code}`);
 
+  // An agent can exit 0 without finishing (e.g. it stopped to ask something). Check before the PR.
+  const unfinished = [];
+  if (code === 0) {
+    const dirty = sh('git status --porcelain', { cwd: dir });
+    if (dirty)
+      unfinished.push(
+        `uncommitted: ${dirty
+          .split('\n')
+          .map((l) => l.slice(3))
+          .join(', ')}`,
+      );
+    const tasks = taskProgress(dir, slug);
+    const m = tasks?.match(/(\d+)\/(\d+)/);
+    if (m && m[1] !== m[2]) unfinished.push(tasks);
+    if (!existsSync(path.join(dir, 'specs', slug, 'pr.md'))) unfinished.push('no pr.md');
+  }
+
   let outcome;
   if (code !== 0) {
     outcome = `agent failed (exit ${code}), no PR`;
+  } else if (unfinished.length) {
+    outcome = `agent stopped before finishing (${unfinished.join('; ')}), no PR. Check the log, then re-run`;
   } else if (rest.includes('--no-pr')) {
     outcome = 'done (--no-pr)';
   } else {
@@ -382,7 +409,8 @@ function cmdStatus() {
       head.push(`⚠ stopped unexpectedly after ${fmtDuration(st.lastEventAt - st.startedAt)}`);
     } else if (pid) {
       const ok = st?.exitCode === 0;
-      head.push(`${ok ? '✓' : '✗'} finished`);
+      const early = result.startsWith('agent stopped before finishing');
+      head.push(early ? '⚠ stopped early' : `${ok ? '✓' : '✗'} finished`);
       if (st?.finishedAt) head.push(fmtDuration(st.finishedAt - st.startedAt));
       if (typeof st?.result?.costUsd === 'number') head.push(`$${st.result.costUsd.toFixed(2)}`);
     } else {
