@@ -4,9 +4,9 @@
       Verified: `npm test -- health` fails (module/files don't exist yet).
 - [x] Enable `resolveJsonModule` in `tsconfig.json`
       Verified: `npm run typecheck` still passes (no behaviour change yet, flag is additive).
-- [ ] Create `src/health/health.entity.ts` with the `HealthStatus` interface
+- [x] Create `src/health/health.entity.ts` with the `HealthStatus` interface
       Verified: `npm run typecheck` passes.
-- [ ] Create `src/health/health.service.ts` (captures start time, computes uptime, reads version from package.json)
+- [x] Create `src/health/health.service.ts` (captures start time, computes uptime, reads version from package.json)
       Verified: `npm test -- health.service` passes (AC2, AC3).
 - [ ] Create `src/health/health.controller.ts` with `GET /health`
       Verified: covered by e2e test once wired up.
