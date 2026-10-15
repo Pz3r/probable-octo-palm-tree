@@ -127,6 +127,9 @@ node scripts/worktree.mjs run 001-task-priority --fix     # agent fixes/skips ea
 - `/address-review` writes a test + fix per accepted item (or skips with a reason if it conflicts with
   the spec) and appends a "Review response (round N)" table to the PR description.
 - The push updates the PR's commits and description and triggers a fresh AI review.
+- Worktrees keep the `.claude/` kit `main` had when they were created. After `main` gains new commands
+  or hooks, bring them in with `node scripts/worktree.mjs sync <slug>` (a merge, never a rebase, so
+  pushed branches don't need a force-push). `run` tells you when this is needed.
 - After 2 rounds (`AGENT_MAX_FIX_ROUNDS`), `status` says the PR needs a human decision; `--fix
   --extra-round` overrides.
   Without `--plan-only`, the agent plans and implements in one go (the approved spec is the gate).

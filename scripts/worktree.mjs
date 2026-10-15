@@ -9,6 +9,7 @@
 //   node scripts/worktree.mjs pr 002-health-endpoint [--ready] # validate, push, open (or update) the PR yourself
 //   node scripts/worktree.mjs feedback 002-health-endpoint     # PR review comments → .worktrees/<slug>.feedback.md checklist
 //   node scripts/worktree.mjs run 002-health-endpoint --fix    # agent addresses only the items you ticked, pushes to the PR
+//   node scripts/worktree.mjs sync 002-health-endpoint        # merge the latest main into the agent's branch
 //   node scripts/worktree.mjs status                         # progress: tasks, tool calls, idle time, last commit, PR
 //   node scripts/worktree.mjs logs 002-health-endpoint        # live activity log (follows while the agent runs)
 //   node scripts/worktree.mjs rm 002-health-endpoint [--delete-branch]
@@ -146,6 +147,45 @@ function cmdNew(args) {
   }
 }
 
+/**
+ * Bring the latest local main into an agent branch (a merge commit, never a rebase, so an already
+ * pushed branch never needs a force-push). Needed when main gains new commands, hooks or fixes after
+ * the worktree was created.
+ */
+function cmdSync(args) {
+  for (const a of args.filter((x) => !x.startsWith('--'))) {
+    const slug = slugFrom(a);
+    const dir = path.join(wtDir, slug);
+    if (!existsSync(dir)) throw new Error(`No worktree at .worktrees/${slug}`);
+    const leftover = `specs/${slug}/feedback.md`;
+    const dirty = changedFiles(dir).filter((f) => f !== leftover);
+    if (dirty.length)
+      throw new Error(`${slug}: commit or discard these first: ${dirty.join(', ')}`);
+    const behind = Number(sh('git rev-list --count HEAD..main', { cwd: dir }));
+    if (!behind) {
+      console.log(`✓ ${slug}: already up to date with main`);
+      continue;
+    }
+    const before = sh('git rev-parse HEAD', { cwd: dir });
+    const merge = spawnSync('git', ['merge', '--no-edit', 'main'], { cwd: dir, encoding: 'utf8' });
+    if (merge.status !== 0) {
+      const conflicts = trySh('git diff --name-only --diff-filter=U', { cwd: dir }) ?? '';
+      spawnSync('git', ['merge', '--abort'], { cwd: dir });
+      throw new Error(
+        `${slug}: merging main conflicts in: ${conflicts.split('\n').join(', ') || '(see git output)'}. ` +
+          `Merge aborted; resolve by hand in .worktrees/${slug} (git merge main).`,
+      );
+    }
+    console.log(
+      `✓ ${slug}: merged ${behind} commit(s) from main into ${sh('git branch --show-current', { cwd: dir })}`,
+    );
+    if (sh(`git diff --name-only ${before} HEAD -- package-lock.json`, { cwd: dir })) {
+      console.log('  package-lock.json changed: npm ci…');
+      execSync('npm ci --no-audit --no-fund --loglevel=error', { cwd: dir, stdio: 'inherit' });
+    }
+  }
+}
+
 /** Fetch the PR's review comments into a checklist for the human to triage. */
 function cmdFeedback(args) {
   const slug = slugFrom(args.find((a) => !a.startsWith('--')) ?? '');
@@ -214,9 +254,20 @@ function prepareFixRound(slug, extraRound) {
     throw new Error(`checklist is for round ${meta.round}; run feedback --refresh`);
   if (!selected.length && !notes)
     throw new Error('nothing ticked in the checklist and no notes; nothing to fix');
-  if (changedFiles(dir).length)
+  const feedbackRel = `specs/${slug}/feedback.md`;
+  const feedbackFile = path.join(dir, feedbackRel);
+  const dirty = changedFiles(dir);
+  if (dirty.some((f) => f !== feedbackRel)) {
     throw new Error('the worktree has uncommitted changes; resolve them first');
-  const feedbackFile = path.join(dir, 'specs', slug, 'feedback.md');
+  }
+  if (dirty.length) {
+    // Left over from a fix run that didn't finish: start this round's file again from the last commit.
+    if (trySh(`git cat-file -e HEAD:${feedbackRel}`, { cwd: dir }) !== null) {
+      execFileSync('git', ['checkout', '--', feedbackRel], { cwd: dir });
+    } else {
+      unlinkSync(feedbackFile);
+    }
+  }
   const header =
     '# Review feedback\n\n<!-- Written by scripts/worktree.mjs from review items a human selected. -->\n\n';
   const prev = existsSync(feedbackFile) ? readFileSync(feedbackFile, 'utf8') : header;
@@ -257,6 +308,17 @@ function cmdRun(args) {
     if (planOnly && plan && plan !== 'draft') {
       console.error(
         `✗ ${slug}: plan is already "${plan}"; run without --plan-only to implement it`,
+      );
+      continue;
+    }
+    // A worktree only has the .claude/ kit that main had when it was created.
+    const needed = planOnly ? 'plan' : fix ? 'address-review' : 'implement';
+    if (
+      existsSync(existing) &&
+      !existsSync(path.join(existing, '.claude', 'commands', `${needed}.md`))
+    ) {
+      console.error(
+        `✗ ${slug}: this worktree predates /${needed}. Update it first: node scripts/worktree.mjs sync ${slug}`,
       );
       continue;
     }
@@ -496,6 +558,16 @@ function openPr(slug, { ready = false } = {}) {
   }
   if (trySh('gh auth status', { cwd: dir }) === null) {
     throw new Error('GitHub CLI not installed or not logged in. Run `gh auth login`');
+  }
+  // If the branch is based on main commits GitHub doesn't have, they'd show up in the PR as if the
+  // agent wrote them.
+  trySh('git fetch --quiet origin main', { cwd: dir });
+  const base = sh(`git merge-base ${branch} main`, { cwd: dir });
+  if (trySh(`git merge-base --is-ancestor ${base} origin/main`, { cwd: dir }) === null) {
+    throw new Error(
+      'main has commits that are not on GitHub yet, so they would appear in this PR. ' +
+        'Push them first: git push origin main',
+    );
   }
 
   console.log(`→ ${slug}: npm run check…`);
@@ -761,6 +833,7 @@ const commands = {
   pr: cmdPr,
   'approve-plan': cmdApprovePlan,
   feedback: cmdFeedback,
+  sync: cmdSync,
   status: cmdStatus,
   list: cmdStatus,
   logs: cmdLogs,
@@ -770,7 +843,7 @@ const commands = {
 try {
   if (!commands[cmd]) {
     console.log(
-      'Usage: node scripts/worktree.mjs <new|run|approve-plan|pr|feedback|status|logs|rm> <spec-slug…> ' +
+      'Usage: node scripts/worktree.mjs <new|run|approve-plan|pr|feedback|sync|status|logs|rm> <spec-slug…> ' +
         '[--no-install] [--no-pr] [--plan-only] [--fix [--extra-round]] [--ready] [--refresh] [--delete-branch]',
     );
     process.exit(cmd ? 1 : 0);
