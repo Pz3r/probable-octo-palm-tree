@@ -83,6 +83,12 @@ describe('Tasks API (e2e)', () => {
       .send({ title: 'bad', priority: 1 })
       .expect(400);
     expect(invalidNumber.body.message).toEqual(enumErrorMatcher);
+
+    const invalidNull = await request(server)
+      .post('/tasks')
+      .send({ title: 'bad', priority: null })
+      .expect(400);
+    expect(invalidNull.body.message).toEqual(enumErrorMatcher);
   });
 
   it('AC3: rejects an unknown priority on update with 400', async () => {
@@ -104,6 +110,12 @@ describe('Tasks API (e2e)', () => {
       .send({ priority: 1 })
       .expect(400);
     expect(invalidNumber.body.message).toEqual(enumErrorMatcher);
+
+    const invalidNull = await request(server)
+      .patch(`/tasks/${id}`)
+      .send({ priority: null })
+      .expect(400);
+    expect(invalidNull.body.message).toEqual(enumErrorMatcher);
   });
 
   it('AC4: PATCH /tasks/:id with priority changes only priority and updatedAt', async () => {

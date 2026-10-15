@@ -1,4 +1,4 @@
-import { IsEnum, IsNotEmpty, IsOptional, IsString, MaxLength } from 'class-validator';
+import { IsEnum, IsNotEmpty, IsString, MaxLength, ValidateIf } from 'class-validator';
 import { TaskPriority } from '../task.entity';
 
 export class CreateTaskDto {
@@ -7,7 +7,7 @@ export class CreateTaskDto {
   @MaxLength(200)
   title!: string;
 
-  @IsOptional()
+  @ValidateIf((_, value) => value !== undefined)
   @IsEnum(TaskPriority)
   priority?: TaskPriority;
 }
