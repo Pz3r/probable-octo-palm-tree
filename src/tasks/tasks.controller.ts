@@ -8,8 +8,10 @@ import {
   ParseUUIDPipe,
   Patch,
   Post,
+  Query,
 } from '@nestjs/common';
 import { CreateTaskDto } from './dto/create-task.dto';
+import { TaskQueryDto } from './dto/task-query.dto';
 import { UpdateTaskDto } from './dto/update-task.dto';
 import { Task } from './task.entity';
 import { TasksService } from './tasks.service';
@@ -19,8 +21,8 @@ export class TasksController {
   constructor(private readonly tasks: TasksService) {}
 
   @Get()
-  list(): Task[] {
-    return this.tasks.list();
+  list(@Query() query: TaskQueryDto): Task[] {
+    return this.tasks.list(query);
   }
 
   @Get(':id')

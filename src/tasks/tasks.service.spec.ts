@@ -1,4 +1,5 @@
 import { NotFoundException } from '@nestjs/common';
+import { TaskPriority } from './task.entity';
 import { TasksRepository } from './tasks.repository';
 import { TasksService } from './tasks.service';
 
@@ -19,6 +20,36 @@ describe('TasksService', () => {
     const a = service.create({ title: 'a' });
     const b = service.create({ title: 'b' });
     expect(service.list().map((t) => t.id)).toEqual([a.id, b.id]);
+  });
+
+  it('AC1: creates a task without priority defaulting to medium', () => {
+    const task = service.create({ title: 'default priority' });
+    expect(task.priority).toBe(TaskPriority.Medium);
+  });
+
+  it.each([TaskPriority.Low, TaskPriority.Medium, TaskPriority.High])(
+    'AC2: creates a task with priority %s and stores that value',
+    (priority) => {
+      const task = service.create({ title: 'explicit priority', priority });
+      expect(task.priority).toBe(priority);
+    },
+  );
+
+  it('AC5: lists only tasks matching the given priority filter, in creation order', () => {
+    const a = service.create({ title: 'a', priority: TaskPriority.High });
+    service.create({ title: 'b', priority: TaskPriority.Low });
+    const c = service.create({ title: 'c', priority: TaskPriority.High });
+
+    const result = service.list({ priority: TaskPriority.High });
+
+    expect(result.map((t) => t.id)).toEqual([a.id, c.id]);
+  });
+
+  it('AC7: lists all tasks when no priority filter is given', () => {
+    const a = service.create({ title: 'a', priority: TaskPriority.Low });
+    const b = service.create({ title: 'b', priority: TaskPriority.High });
+
+    expect(service.list({}).map((t) => t.id)).toEqual([a.id, b.id]);
   });
 
   it('updates done and title', () => {

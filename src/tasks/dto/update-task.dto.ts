@@ -1,4 +1,13 @@
-import { IsBoolean, IsNotEmpty, IsOptional, IsString, MaxLength } from 'class-validator';
+import {
+  IsBoolean,
+  IsEnum,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  MaxLength,
+  ValidateIf,
+} from 'class-validator';
+import { TaskPriority } from '../task.entity';
 
 export class UpdateTaskDto {
   @IsOptional()
@@ -10,4 +19,8 @@ export class UpdateTaskDto {
   @IsOptional()
   @IsBoolean()
   done?: boolean;
+
+  @ValidateIf((_, value) => value !== undefined)
+  @IsEnum(TaskPriority)
+  priority?: TaskPriority;
 }
