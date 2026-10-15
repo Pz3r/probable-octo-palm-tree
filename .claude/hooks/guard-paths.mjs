@@ -19,7 +19,14 @@ const PROTECTED = [
   ],
   [/^\.claude\/hooks\//, 'Agents may not modify their own guardrails.'],
   [/^\.claude\/settings\.json$/, 'Agents may not change their own permissions.'],
-  [/^scripts\/(worktree|agent-events)\.mjs$/, 'The orchestration scripts are human-owned.'],
+  [
+    /^scripts\/(worktree|agent-events|review-feedback)\.mjs$/,
+    'The orchestration scripts are human-owned.',
+  ],
+  [
+    /^specs\/[^/]+\/feedback\.md$/,
+    'Review feedback is written by worktree.mjs from items a human selected.',
+  ],
   [/^\.\.\//, 'Writes outside the project are not allowed.'],
 ];
 
@@ -34,6 +41,25 @@ if (/^specs\/[^/]+\/spec\.md$/.test(p)) {
     block(
       `Blocked edit to ${p}: this spec is approved. If the code can't satisfy it or it's ambiguous, ` +
         'stop and explain the problem to the human instead of changing the spec.',
+    );
+  }
+}
+
+// Plans: a human approves them (worktree.mjs approve-plan); approved plans are frozen for agents.
+if (/^specs\/[^/]+\/plan\.md$/.test(p)) {
+  const APPROVED = /^status:\s*approved\b/m;
+  const abs = path.resolve(root, p);
+  if (existsSync(abs) && APPROVED.test(readFileSync(abs, 'utf8'))) {
+    block(`Blocked edit to ${p}: this plan is approved. Track progress in tasks.md instead.`);
+  }
+  const t = input.tool_input ?? {};
+  const incoming = [t.content, t.new_string, ...(t.edits ?? []).map((e) => e.new_string)]
+    .filter(Boolean)
+    .join('\n');
+  if (APPROVED.test(incoming)) {
+    block(
+      `Blocked edit to ${p}: only a human can approve a plan ` +
+        '(node scripts/worktree.mjs approve-plan <slug>). Leave it as status: draft.',
     );
   }
 }

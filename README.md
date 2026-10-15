@@ -101,6 +101,38 @@ agent) re-runs `npm run check`, pushes `agent/<slug>` and opens a **draft PR** u
 `scripts/`, `.claude/`, `.github/`), the PR says so. Failed or dirty runs get no PR.
 
 - Keep the branch local: `run <slug> --no-pr`
+- Review the plan before any code is written:
+  ```bash
+  node scripts/worktree.mjs run 001-task-priority --plan-only   # agent writes + commits plan.md/tasks.md, stops
+  node scripts/worktree.mjs status                              # 📝 plan awaiting review
+  $EDITOR .worktrees/001-task-priority/specs/001-task-priority/plan.md   # read it, edit it if you like
+  node scripts/worktree.mjs approve-plan 001-task-priority      # commits your edits + status: approved
+  node scripts/worktree.mjs run 001-task-priority               # implements against the approved plan → draft PR
+  ```
+  `run` refuses while a plan is still `draft`, and agents can't approve plans or edit approved ones.
+
+#### Review loop: PR feedback back to the agent
+Reviewer comments (the AI review or people) are input for *you* to triage, not instructions to forward:
+the reviewer can be wrong or out of scope, two AIs can ping-pong forever, and anyone who can comment
+on a PR could write "also delete the auth check".
+```bash
+node scripts/worktree.mjs feedback 001-task-priority      # PR comments → .worktrees/001-task-priority.feedback.md
+# tick [x] the items to address, add guidance under an item or in "Your notes"
+node scripts/worktree.mjs run 001-task-priority --fix     # agent fixes/skips each ticked item, pushes to the same PR
+```
+- The AI review comment is split into one item per finding; inline and human comments are items too.
+  Later rounds only show comments that arrived since the previous round.
+- Only ticked items and your notes reach the agent, written to `specs/<slug>/feedback.md` (committed,
+  so the PR shows exactly what was asked). Quoted text is passed as untrusted reviewer input.
+- `/address-review` writes a test + fix per accepted item (or skips with a reason if it conflicts with
+  the spec) and appends a "Review response (round N)" table to the PR description.
+- The push updates the PR's commits and description and triggers a fresh AI review.
+- Worktrees keep the `.claude/` kit `main` had when they were created. After `main` gains new commands
+  or hooks, bring them in with `node scripts/worktree.mjs sync <slug>` (a merge, never a rebase, so
+  pushed branches don't need a force-push). `run` tells you when this is needed.
+- After 2 rounds (`AGENT_MAX_FIX_ROUNDS`), `status` says the PR needs a human decision; `--fix
+  --extra-round` overrides.
+  Without `--plan-only`, the agent plans and implements in one go (the approved spec is the gate).
 - Open or update the PR by hand (e.g. after an interactive session): `node scripts/worktree.mjs pr <slug>`
   (`--ready` for a non-draft PR) Pass extra Claude flags with `CLAUDE_ARGS`, e.g.
 `CLAUDE_ARGS="--model sonnet" node scripts/worktree.mjs run 002-health-endpoint` to try cheaper
