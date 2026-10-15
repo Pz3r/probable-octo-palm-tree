@@ -43,3 +43,8 @@ repo's `ValidationPipe` config deliberately avoids.
   calls.
 - All file changes are within the plan's file list; no files outside the plan were touched.
 - `npm run check` is green (typecheck, lint, 23/23 tests).
+
+## Review response (round 1)
+| Item | Decision | What changed / why not | Test |
+|---|---|---|---|
+| R1-1: `priority: null` bypasses `@IsEnum`; PATCH silently stores `null` | Fix | `@IsOptional()` treats both `undefined` and `null` as "absent" in class-validator, so `{ "priority": null }` skipped `@IsEnum` on both `CreateTaskDto` and `UpdateTaskDto`. Replaced `@IsOptional()` with `@ValidateIf((_, value) => value !== undefined)` on the `priority` field of both DTOs, so only a genuinely absent field skips validation; `null` is now validated by `@IsEnum` and rejected with 400. | `test/tasks.e2e-spec.ts`: added `priority: null` cases to `AC3: rejects an unknown priority on create with 400` and `...on update with 400` (failed with 201/200 before the fix, pass now) |
