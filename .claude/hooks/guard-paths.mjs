@@ -19,7 +19,14 @@ const PROTECTED = [
   ],
   [/^\.claude\/hooks\//, 'Agents may not modify their own guardrails.'],
   [/^\.claude\/settings\.json$/, 'Agents may not change their own permissions.'],
-  [/^scripts\/(worktree|agent-events)\.mjs$/, 'The orchestration scripts are human-owned.'],
+  [
+    /^scripts\/(worktree|agent-events|review-feedback)\.mjs$/,
+    'The orchestration scripts are human-owned.',
+  ],
+  [
+    /^specs\/[^/]+\/feedback\.md$/,
+    'Review feedback is written by worktree.mjs from items a human selected.',
+  ],
   [/^\.\.\//, 'Writes outside the project are not allowed.'],
 ];
 
